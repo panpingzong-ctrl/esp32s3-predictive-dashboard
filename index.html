@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESP32-S3 预测性维护监测终端</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --line: #d9e0ec;
+      --normal: #16845b;
+      --warning: #b26a00;
+      --danger: #b42318;
+      --blue: #2457c5;
+      --shadow: 0 12px 30px rgba(20, 32, 56, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    }
+
+    header {
+      padding: 24px 32px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .topline {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge strong {
+      color: var(--text);
+      margin-left: 6px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 8px;
+      background: #9aa4b2;
+    }
+
+    .dot.online {
+      background: var(--normal);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      min-height: 130px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+
+    .value {
+      font-size: 34px;
+      font-weight: 750;
+      line-height: 1;
+    }
+
+    .unit {
+      margin-left: 6px;
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    .state-card.normal {
+      border-color: rgba(22, 132, 91, 0.35);
+    }
+
+    .state-card.warning {
+      border-color: rgba(178, 106, 0, 0.4);
+    }
+
+    .state-card.danger {
+      border-color: rgba(180, 35, 24, 0.42);
+    }
+
+    #stateValue.normal {
+      color: var(--normal);
+    }
+
+    #stateValue.warning {
+      color: var(--warning);
+    }
+
+    #stateValue.danger {
+      color: var(--danger);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+    }
+
+    button.warn {
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    button.danger {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    pre {
+      height: 260px;
+      overflow: auto;
+      margin: 0;
+      padding: 14px;
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .footer-note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      header {
+        padding: 20px;
+      }
+
+      main {
+        padding: 16px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .value {
+        font-size: 30px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ESP32-S3 预测性维护监测终端</h1>
+    <p class="sub">实时接收 MQTT 遥测数据，展示设备温度、振动强度、运行状态和通信状态。</p>
+  </header>
+
+  <main>
+    <div class="topline">
+      <span class="badge"><span id="connDot" class="dot"></span>MQTT 连接<strong id="connText">连接中</strong></span>
+      <span class="badge">Broker<strong>broker.emqx.io</strong></span>
+      <span class="badge">Topic<strong>factory/pm/esp32s3_pm_001/telemetry</strong></span>
+      <span class="badge">最后更新<strong id="lastUpdate">暂无数据</strong></span>
+    </div>
+
+    <section class="grid">
+      <div class="card">
+        <div class="label">当前温度</div>
+        <div class="value"><span id="tempValue">--</span><span class="unit">℃</span></div>
+      </div>
+
+      <div class="card">
+        <div class="label">振动强度</div>
+        <div class="value"><span id="vibValue">--</span><span class="unit">g</span></div>
+      </div>
+
+      <div id="stateCard" class="card state-card">
+        <div class="label">设备运行状态</div>
+        <div id="stateValue" class="value">--</div>
+      </div>
+
+      <div class="card">
+        <div class="label">设备编号</div>
+        <div class="value" style="font-size: 22px;"><span id="deviceValue">--</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>模拟发送</h2>
+      <div class="actions">
+        <button class="primary" onclick="publishSample('NORMAL')">发送正常数据</button>
+        <button class="warn" onclick="publishSample('WARNING')">发送轻微异常</button>
+        <button class="danger" onclick="publishSample('DANGER')">发送严重故障</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>实时消息日志</h2>
+      <pre id="logBox">等待 MQTT 数据...</pre>
+    </section>
+
+    <p class="footer-note">
+      说明：当前页面使用 EMQX 公共 Broker 进行项目演示。公共 Broker 数据对外可见，只适合上传温度、振动、状态等演示数据，不要上传 WiFi 密码、手机号或真实工厂敏感信息。
+    </p>
+  </main>
+
+  <script>
+    const brokerUrl = "wss://broker.emqx.io:8084/mqtt";
+    const topic = "factory/pm/esp32s3_pm_001/telemetry";
+    const clientId = "web_dashboard_" + Math.random().toString(16).slice(2, 10);
+    const client = mqtt.connect(brokerUrl, {
+      clientId,
+      clean: true,
+      connectTimeout: 8000,
+      reconnectPeriod: 2000
+    });
+
+    const connDot = document.getElementById("connDot");
+    const connText = document.getElementById("connText");
+    const tempValue = document.getElementById("tempValue");
+    const vibValue = document.getElementById("vibValue");
+    const stateValue = document.getElementById("stateValue");
+    const stateCard = document.getElementById("stateCard");
+    const deviceValue = document.getElementById("deviceValue");
+    const lastUpdate = document.getElementById("lastUpdate");
+    const logBox = document.getElementById("logBox");
+
+    function setConnection(online) {
+      connDot.classList.toggle("online", online);
+      connText.textContent = online ? "ONLINE" : "OFFLINE";
+    }
+
+    function normalizeState(state) {
+      const value = String(state || "").toUpperCase();
+      if (value === "WARNING") return "WARNING";
+      if (value === "DANGER") return "DANGER";
+      return "NORMAL";
+    }
+
+    function renderData(data) {
+      const state = normalizeState(data.state);
+      tempValue.textContent = Number(data.temp).toFixed(1);
+      vibValue.textContent = Number(data.vibration).toFixed(3);
+      stateValue.textContent = state;
+      deviceValue.textContent = data.deviceId || "esp32s3_pm_001";
+
+      stateValue.className = "value " + state.toLowerCase();
+      stateCard.className = "card state-card " + state.toLowerCase();
+      lastUpdate.textContent = new Date().toLocaleString();
+    }
+
+    function appendLog(title, payload) {
+      const now = new Date().toLocaleTimeString();
+      const previous = logBox.textContent === "等待 MQTT 数据..." ? "" : logBox.textContent + "\n\n";
+      logBox.textContent = previous + `[${now}] ${title}\n${payload}`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    client.on("connect", () => {
+      setConnection(true);
+      client.subscribe(topic, { qos: 0 }, (error) => {
+        if (error) {
+          appendLog("订阅失败", error.message);
+        } else {
+          appendLog("订阅成功", topic);
+        }
+      });
+    });
+
+    client.on("reconnect", () => {
+      connText.textContent = "重连中";
+    });
+
+    client.on("close", () => {
+      setConnection(false);
+    });
+
+    client.on("error", (error) => {
+      appendLog("连接错误", error.message);
+    });
+
+    client.on("message", (messageTopic, payloadBuffer) => {
+      const payload = payloadBuffer.toString();
+      appendLog("收到数据 " + messageTopic, payload);
+      try {
+        const data = JSON.parse(payload);
+        renderData(data);
+      } catch (error) {
+        appendLog("JSON 解析失败", error.message);
+      }
+    });
+
+    function publishSample(state) {
+      const samples = {
+        NORMAL: { temp: 36.5, vibration: 0.12 },
+        WARNING: { temp: 58.2, vibration: 0.31 },
+        DANGER: { temp: 76.4, vibration: 0.68 }
+      };
+      const sample = samples[state] || samples.NORMAL;
+      const payload = JSON.stringify({
+        deviceId: "esp32s3_pm_001",
+        temp: sample.temp,
+        vibration: sample.vibration,
+        state,
+        wifi: true
+      }, null, 2);
+
+      if (!client.connected) {
+        appendLog("发送失败", "MQTT 未连接");
+        return;
+      }
+      client.publish(topic, payload, { qos: 0, retain: false });
+      appendLog("已发送模拟数据", payload);
+    }
+  </script>
+</body>
+</html>
